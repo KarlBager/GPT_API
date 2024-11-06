@@ -2,11 +2,16 @@
 import { ref } from 'vue';
 import { createCompletionsChat } from './text.js';
 import { createInitialCompletionsChat } from './text.js';
+import { createImagePrompt } from './text.js';
 import { getRandomInt } from './text.js';
 import names from './names.json';
 import { startBackground } from './background.js';
 
+import { textToImage, saveBase64AsImageFile } from './stable.js'
+
 startBackground();
+
+
 
 const content = ref('');
 const chatHistory = ref([]);
@@ -18,6 +23,12 @@ const systemPrompt = "You have chosen a person that you must take on as your per
 "3. As the user’s questions become more targeted (like asking about specific achievements, well-known events, or places), you can provide slightly more precise hints to encourage them.\n" +
 "4. Once the user is very close (e.g., guessing correctly or almost correctly), confirm with a more explicit clue or reveal.\n\n" +
 "Playfully encourage them as they get closer, and subtly guide them toward the answer without giving away who you are too easily!";
+
+
+const imagePrompt = ref('')
+const imgSrc = ref('')
+
+
 
 // Function to choose a persona when the app loads
 async function choosePersona() {
@@ -42,6 +53,8 @@ async function choosePersona() {
     chatHistory.value.push({ role: 'assistant', content: 'Sorry, I could not choose a persona.' });
   }
 }
+
+
 
 // Function to handle user input
 async function handleUserInput() {
@@ -72,19 +85,65 @@ async function handleUserInput() {
   }
 }
 
+
+
+async function generateImage() {
+  if (!imagePrompt.value) return
+  const image = await textToImage(imagePrompt.value);
+  imgSrc.value = image;
+  saveBase64AsImageFile(image, 'generatedImage.png');
+}
+
+
+
+// Function to handle user input
+async function requestImageHint() {
+  const imageSystemPrompt = "The user has requested an image hint. With the past conversation in mind, you will answer this with a prompt for an image generator AI that contains a few elements that can hint at the chosen person. You are allowed to include a person, but put more emphasis on relevant props or settings. Answer only the prompt itself";
+
+
+// Construct the full prompt including the persona and chat history
+const promptMessages = chatHistory.value
+  .map(msg => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+  .join('\n');
+
+const fullPrompt = `${persona.value}:\n${promptMessages}\nSystem: ${imageSystemPrompt}\nAssistant:`;
+
+
+  try {
+    const response = await createImagePrompt(fullPrompt); // Send the prompt to the model
+    console.log(response.value);
+
+    imagePrompt.value = response.value;
+    generateImage();
+    
+
+  } catch (error) {
+    console.error("Error fetching AI response:", error);
+    chatHistory.value.push({ role: 'assistant', content: 'Sorry, an error occurred!' });
+  }
+}
+
+
+
+
 // On component mount, choose a persona
 choosePersona();
 </script>
 
 <template>
      <div class="container">
-    <h1>Guess the <strong>Persona</strong></h1>
+    <h1>Guess the <strong>Person</strong></h1>
 
     <div class="chat-window">
       <div v-for="(message, index) in chatHistory" :key="index" :class="message.role">
         <p>{{ message.content }}</p>
       </div>
+      <div>
+        <img class="hintImage" :src="imgSrc" v-if="imgSrc" />
+      </div>
     </div>
+
+    
 
     <input
       type="text"
@@ -94,6 +153,8 @@ choosePersona();
       autofocus
       @keyup.enter="handleUserInput"
     />
+
+    <button @click="requestImageHint">Image Hint</button>
   </div>
 
 </template>
@@ -161,5 +222,11 @@ button {
 p, h1{
 color: #f4f4f4;
 }
+
+.hintImage{
+  max-width: 30rem;
+
+}
+
 
 </style>
